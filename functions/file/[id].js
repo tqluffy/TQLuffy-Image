@@ -8,8 +8,14 @@ import {
 import { isShortUrlsEnabled, looksLikeShortId, resolveShortId } from "../utils/shortlink.js";
 import { getServingProvider } from "../storage/index.js";
 import { getModerationProvider } from "../moderation/index.js";
+import { openFileId } from "../utils/stateless.js";
+import { createDefaultMetadata } from "../utils/metadata.js";
 
 export async function onRequest(context) {
+    return serveFile(context, false);
+}
+
+export async function serveFile(context, stateless) {
     const {
         request,
         env,
@@ -26,11 +32,20 @@ export async function onRequest(context) {
         });
     }
 
-    const fileId = await resolveRequestedId(env, params.id);
+    const fileId = stateless ? await openFileId(env.STATELESS_LINK_SECRET, params.id) : await resolveRequestedId(env, params.id);
+    if (!fileId) return new Response('Not found', { status: 404 });
     const response = await getServingProvider(fileId).fetchFile(env, request, url, fileId);
 
     // If the response is OK, proceed with further checks
     if (!response.ok) return response;
+
+    if (stateless) {
+        if (env.WhiteList_Mode === 'true') return Response.redirect(`${url.origin}/whitelist-on.html`, 302);
+        // Model discovery must not persist its cache in KV on this path either.
+        const result = await moderateFile({ ...env, img_url: undefined }, url, fileId, createDefaultMetadata(fileId), response);
+        if (result.blocked) return Response.redirect(`${url.origin}/block-img.html`, 302);
+        return withFileHeaders(response, fileId);
+    }
 
     // Allow the admin page to directly view the image
     const isAdmin = request.headers.get('Referer')?.includes(`${url.origin}/admin`);

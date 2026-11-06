@@ -4,6 +4,7 @@ import { jsonResponse } from "./utils/http.js";
 import { createDefaultMetadata, putMetadata } from "./utils/metadata.js";
 import { allocateShortId, isShortUrlsEnabled, putShortLink } from "./utils/shortlink.js";
 import { getUploadProvider } from "./storage/index.js";
+import { sealFileId } from "./utils/stateless.js";
 
 export async function onRequestPost(context) {
     const { request, env } = context;
@@ -19,6 +20,10 @@ export async function onRequestPost(context) {
 
         const clonedRequest = request.clone();
         const formData = await clonedRequest.formData();
+        const noKv = formData.get('no_kv') === 'true';
+        if (noKv && !env.STATELESS_LINK_SECRET) {
+            return jsonResponse({ error: 'STATELESS_LINK_SECRET must be configured' }, { status: 503 });
+        }
 
         await errorHandling(context);
         telemetryData(context);
@@ -32,6 +37,13 @@ export async function onRequestPost(context) {
         const fileExtension = fileName.split('.').pop().toLowerCase();
 
         const longId = await provider.upload(env, uploadFile, { fileName, fileExtension });
+        if (noKv) {
+            const token = await sealFileId(env.STATELESS_LINK_SECRET, longId);
+            return jsonResponse([{
+                src: `/file-stateless/${token}`,
+                metadata: createDefaultMetadata(longId, { fileName, fileSize: uploadFile.size, provider: provider.key }),
+            }]);
+        }
         let shortId = null;
 
         // 将文件信息保存到 KV 存储

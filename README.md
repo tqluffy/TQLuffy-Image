@@ -225,6 +225,16 @@ curl -u uploader:strong-password -F "file=@/path/to/image.png" https://your.doma
 
 The endpoint works with upload tools that support custom web image hosts, such as PicGo.
 
+#### Upload without a KV record
+
+Set a long random `STATELESS_LINK_SECRET` as a Cloudflare Pages secret and redeploy. Keep it backed up: changing or removing it invalidates all stateless links. Send `no_kv=true` as a multipart field to opt in. The response remains an array and additionally includes `metadata`; store it on the calling system. The returned `/file-stateless/...` URL is an encrypted, authenticated file identifier and does not expose the Telegram bot token. Upload and retrieval do not write file records or model-discovery cache to KV. Short links and dashboard management are unavailable for these files. Hotlink checks still apply; moderation runs on each access without a persisted result, and whitelist mode blocks stateless links. Existing moderation failure behavior remains fail-open. Treat the URL as a bearer link.
+
+```bash
+curl -u uploader:password -F 'file=@image.png' -F 'no_kv=true' https://your.domain/upload
+```
+
+Files are still stored by the configured provider. This mode cannot prevent someone who independently knows the original provider file ID from accessing it through the normal `/file/` route, which can create a KV record. Keep upload credentials private; anyone authorized to upload can request stateless links.
+
 > [!NOTE]
 > When storing to Telegram (the default), uploads are subject to Telegram's Bot API rate limit of roughly **20 messages per minute per channel**. Batch uploads that exceed this rate will start failing with Telegram errors — space out large batches, or switch to [R2 storage](#r2-storage), which has no such limit.
 
