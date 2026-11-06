@@ -227,10 +227,14 @@ The endpoint works with upload tools that support custom web image hosts, such a
 
 #### Upload without a KV record
 
-Set a long random `STATELESS_LINK_SECRET` as a Cloudflare Pages secret and redeploy. Keep it backed up: changing or removing it invalidates all stateless links. Send `no_kv=true` as a multipart field to opt in. The response remains an array and additionally includes `metadata`; store it on the calling system. The returned `/file-stateless/...` URL is an encrypted, authenticated file identifier and does not expose the Telegram bot token. Upload and retrieval do not write file records or model-discovery cache to KV. Short links and dashboard management are unavailable for these files. Hotlink checks still apply; moderation runs on each access without a persisted result, and whitelist mode blocks stateless links. Existing moderation failure behavior remains fail-open. Treat the URL as a bearer link.
+Configure a Cloudflare Pages secret `STATELESS_LINK_KEYS` containing a JSON array such as `[{"id":"a1B2","secret":"a-long-random-secret"}]`. IDs are exactly four case-sensitive ASCII letters or digits and must be unique. Keep a secure backup of each secret: changing or removing a key invalidates links created with it. Existing deployments may retain `STATELESS_LINK_SECRET`; it is automatically registered as ID `TEST`, and must not also occur in the list. Legacy links without an ID continue to use `TEST`. Redeploy after changing secrets.
+
+Send `no_kv=true` and the selected `key_id` as multipart fields. The response includes `key_id` and `metadata`; store the metadata on the calling system. The returned `/file-stateless/<key_id>.<encrypted-id>` URL is an encrypted, authenticated file identifier and does not expose the Telegram bot token. The ID selects a server-side encryption key; it is public and is not an upload credential. Upload authentication remains controlled by `UPLOAD_BASIC_USER` and `UPLOAD_BASIC_PASS`.
+
+Upload and retrieval do not write file records or model-discovery cache to KV. Short links and dashboard management are unavailable for these files. Hotlink checks still apply; moderation runs on each access without a persisted result, and whitelist mode blocks stateless links. Existing moderation failure behavior remains fail-open. Treat the URL as a bearer link.
 
 ```bash
-curl -u uploader:password -F 'file=@image.png' -F 'no_kv=true' https://your.domain/upload
+curl -u uploader:password -F 'file=@image.png' -F 'no_kv=true' -F 'key_id=TEST' https://your.domain/upload
 ```
 
 Files are still stored by the configured provider. This mode cannot prevent someone who independently knows the original provider file ID from accessing it through the normal `/file/` route, which can create a KV record. Keep upload credentials private; anyone authorized to upload can request stateless links.

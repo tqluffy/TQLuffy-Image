@@ -8,7 +8,7 @@ import {
 import { isShortUrlsEnabled, looksLikeShortId, resolveShortId } from "../utils/shortlink.js";
 import { getServingProvider } from "../storage/index.js";
 import { getModerationProvider } from "../moderation/index.js";
-import { openFileId } from "../utils/stateless.js";
+import { getStatelessKeys, openFileId } from "../utils/stateless.js";
 import { createDefaultMetadata } from "../utils/metadata.js";
 
 export async function onRequest(context) {
@@ -32,7 +32,18 @@ export async function serveFile(context, stateless) {
         });
     }
 
-    const fileId = stateless ? await openFileId(env.STATELESS_LINK_SECRET, params.id) : await resolveRequestedId(env, params.id);
+    let fileId;
+    if (stateless) {
+        const match = /^([A-Za-z0-9]{4})\.([A-Za-z0-9_-]+)$/.exec(params.id);
+        const keyId = match ? match[1] : 'TEST';
+        const token = match ? match[2] : params.id;
+        let keys;
+        try { keys = getStatelessKeys(env); }
+        catch { return new Response('Stateless key configuration is invalid', { status: 503 }); }
+        fileId = await openFileId(keys.get(keyId), token);
+    } else {
+        fileId = await resolveRequestedId(env, params.id);
+    }
     if (!fileId) return new Response('Not found', { status: 404 });
     const response = await getServingProvider(fileId).fetchFile(env, request, url, fileId);
 

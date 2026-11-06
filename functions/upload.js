@@ -4,7 +4,7 @@ import { jsonResponse } from "./utils/http.js";
 import { createDefaultMetadata, putMetadata } from "./utils/metadata.js";
 import { allocateShortId, isShortUrlsEnabled, putShortLink } from "./utils/shortlink.js";
 import { getUploadProvider } from "./storage/index.js";
-import { sealFileId } from "./utils/stateless.js";
+import { getStatelessKeys, sealFileId } from "./utils/stateless.js";
 
 export async function onRequestPost(context) {
     const { request, env } = context;
@@ -21,8 +21,17 @@ export async function onRequestPost(context) {
         const clonedRequest = request.clone();
         const formData = await clonedRequest.formData();
         const noKv = formData.get('no_kv') === 'true';
-        if (noKv && !env.STATELESS_LINK_SECRET) {
-            return jsonResponse({ error: 'STATELESS_LINK_SECRET must be configured' }, { status: 503 });
+        let keyId, secret;
+        if (noKv) {
+            keyId = formData.get('key_id');
+            if (typeof keyId !== 'string' || !/^[A-Za-z0-9]{4}$/.test(keyId)) {
+                return jsonResponse({ error: 'key_id must contain exactly four letters or digits' }, { status: 400 });
+            }
+            let keys;
+            try { keys = getStatelessKeys(env); }
+            catch { return jsonResponse({ error: 'Stateless key configuration is invalid' }, { status: 503 }); }
+            secret = keys.get(keyId);
+            if (!secret) return jsonResponse({ error: 'Unknown key_id' }, { status: 400 });
         }
 
         await errorHandling(context);
@@ -38,9 +47,10 @@ export async function onRequestPost(context) {
 
         const longId = await provider.upload(env, uploadFile, { fileName, fileExtension });
         if (noKv) {
-            const token = await sealFileId(env.STATELESS_LINK_SECRET, longId);
+            const token = await sealFileId(secret, longId);
             return jsonResponse([{
-                src: `/file-stateless/${token}`,
+                src: `/file-stateless/${keyId}.${token}`,
+                key_id: keyId,
                 metadata: createDefaultMetadata(longId, { fileName, fileSize: uploadFile.size, provider: provider.key }),
             }]);
         }
