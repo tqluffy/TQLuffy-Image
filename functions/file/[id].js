@@ -44,7 +44,14 @@ export async function serveFile(context, stateless) {
         // Model discovery must not persist its cache in KV on this path either.
         const result = await moderateFile({ ...env, img_url: undefined }, url, fileId, createDefaultMetadata(fileId), response);
         if (result.blocked) return Response.redirect(`${url.origin}/block-img.html`, 302);
-        return withFileHeaders(response, fileId);
+        // Do not reveal the decrypted provider id in Content-Disposition.
+        const extension = fileId.includes('.') ? fileId.split('.').pop().replace(/[^a-z0-9]/gi, '').slice(0, 10) : '';
+        const safeName = extension ? `file.${extension}` : 'file';
+        const safeResponse = withFileHeaders(response, safeName);
+        const headers = new Headers(safeResponse.headers);
+        const disposition = headers.get('Content-Disposition') || '';
+        headers.set('Content-Disposition', `${disposition.startsWith('inline') ? 'inline' : 'attachment'}; filename="${safeName}"`);
+        return new Response(safeResponse.body, { status: safeResponse.status, statusText: safeResponse.statusText, headers });
     }
 
     // Allow the admin page to directly view the image

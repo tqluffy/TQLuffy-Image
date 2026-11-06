@@ -28,6 +28,7 @@ describe('stateless uploads', function () {
     const context = makeContext({ env, params: { id: token }, request: new Request('https://example.com' + result.src) });
     const response = await onRequest(context);
     assert.strictEqual(response.status, 200);
+    assert.strictEqual(response.headers.get('Content-Disposition'), 'inline; filename="file.png"');
     assert.strictEqual(await response.text(), 'hello');
     assert.strictEqual(kv.operations.put.length, 0);
     const forged = await onRequest(makeContext({ ...context, params: { id: token.slice(0, -2) + '!!' } }));
